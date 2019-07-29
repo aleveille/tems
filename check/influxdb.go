@@ -12,8 +12,8 @@ import (
 
 var (
 	influxdbQueryMetricCount = `from(bucket: "mydb/autogen") 
-									|> range(start: -8m, stop: -3m)
-									|> filter(fn: (r) => r.run == "4" and r.process == "lagrande" and (r._field == "value"))
+									|> range(start: -4m, stop: -3m)
+									|> filter(fn: (r) => r.process == "lagrande" and (r._field == "value"))
 									|> map(fn: (r) => ({ _time: r._time, fqn: r.process + "." +  r.node + "." + r._measurement + "." + r.worker }))
 									|> keep(columns: ["_time", "fqn"])
 									|> window(every: 1m)
@@ -63,7 +63,7 @@ func EvaluateInfluxDB() {
 		}
 		time.Sleep(2 * time.Second)
 
-		go datasource.GrafanaProxyInstance.SimpleInfluxDBQuery("metrics-count", influxdbQueryMetricCount, "5m")
+		go datasource.GrafanaProxyInstance.FluxDBQuery("metrics-count", influxdbQueryMetricCount)
 		time.Sleep(2 * time.Second)
 		go datasource.GrafanaProxyInstance.SimpleInfluxDBQuery("1-ts-24-hour-range", influxdbQuery1Timeserie, "24h")
 		time.Sleep(2 * time.Second)

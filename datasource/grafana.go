@@ -30,9 +30,11 @@ var (
 	// Match everything from the double [[ until a ]
 	caqlResultRegex       = regexp.MustCompile("data\":\\[\\[([^\\]]*)")
 	influxLastResultRegex = regexp.MustCompile(".*,([0-9]*)]]")
+	fluxLastResultRegex   = regexp.MustCompile("(?s).*,([0-9]*)")
 
 	// InfluxDB specific variables:
-	influxdbQueryURL = "%s/api/datasources/proxy/1/query?db=%s&q=%s%%20&epoch=%s"
+	influxdbQueryURL = "%s/api/datasources/proxy/1/query?db=%s&q=%s%%20&epoch=%s" // Source 1 = InfluxDB current plugin (InfluxQL)
+	fluxdbQueryURL   = "%s/api/datasources/proxy/2/flux/api/v2/query?org=my-org"  // Source 2 = InfluxDB beta Flux plugin
 )
 
 // GrafanaProxy is our wrapper to provide higher-level functionnality to the Grafana API
@@ -271,3 +273,75 @@ func (g *GrafanaProxy) doProxiedInfluxDBHTTPQuery(db string, queryString string,
 	lastCount := datapoints[len(datapoints)-1]
 	return lastCount, nil
 }
+
+func (g *GrafanaProxy) FluxDBQuery(queryMetricName string, queryString string) {
+	queryStartTime := time.Now()
+
+	queryDuration := "nan"
+
+	queryTimestamp := queryStartTime.Unix()
+	result, err := g.doProxiedFluxDBHTTPQuery(config.InfluxDBDatabaseName, queryString)
+
+	if err != nil {
+		result = "nan"
+		log.Errorf("Error while querying Grafana:\n%v\n", err)
+	} else {
+		queryDurationFloat := float64(time.Now().UnixNano()-queryStartTime.UnixNano()) / 1000 / 1000
+		queryDuration = fmt.Sprintf("%.2f", queryDurationFloat)
+	}
+
+	select {
+	case dataout.ResultChan <- dataout.Result{Timestamp: queryTimestamp, Name: fmt.Sprintf("%s.query.%s.duration", config.SandboxID, queryMetricName), Value: queryDuration}:
+	default:
+		log.Error("Channel full, discarding result")
+	}
+	select {
+	case dataout.ResultChan <- dataout.Result{Timestamp: queryTimestamp, Name: fmt.Sprintf("%s.query.%s.value", config.SandboxID, queryMetricName), Value: result}:
+	default:
+		log.Error("Channel full, discarding result")
+	}
+}
+
+func (g *GrafanaProxy) doProxiedFluxDBHTTPQuery(db string, queryString string) (string, error) {
+	var netClient = &http.Client{
+		Timeout: time.Second * 25,
+	}
+
+	formattedQueryURL := fmt.Sprintf(fluxdbQueryURL, config.GrafanaURL)
+
+	req, _ := http.NewRequest("POST", formattedQueryURL, bytes.NewBuffer([]byte(queryString)))
+	req.Header.Add("cookie", grafanaCookie)
+	req.Header.Set("Content-Type", "application/vnd.flux")
+	req.Header.Set("X-Grafana-Org-Id", "1")
+	req.Header.Set("Accept", "application/csv")
+
+	log.Tracef("POST request sent to Grafana: URL=%v, Cookies=%v, Body=%v", req.URL, req.Cookies(), req.Body)
+
+	response, err := netClient.Do(req)
+	if response != nil {
+		defer response.Body.Close()
+	}
+
+	if err != nil {
+		return "nan", fmt.Errorf("net/client request error while querying the Grafana InfluxDB proxy:\n\t%s", err)
+	}
+	if response.StatusCode >= 400 {
+		return "nan", fmt.Errorf("unexpected HTTP status code error while querying the Grafana InfluxDB proxy. HTTP status: %d", response.StatusCode)
+	}
+
+	body, ioErr := ioutil.ReadAll(response.Body)
+	if ioErr != nil {
+		return "nan", fmt.Errorf("io error while reading HTTP response body:\n%s", ioErr)
+	}
+
+	stringBody := string(body)
+	match := fluxLastResultRegex.FindStringSubmatch(stringBody)
+
+	if len(match) < 2 {
+		return "nan", nil
+	}
+
+	return match[1], nil
+}
+
+// {"query":"\ndashboardTime = -5m\nupperDashboardTime = 2019-07-24T20:32:04.653Z\n\nfrom(bucket: \"mydb/autogen\")\n  |> range(start: -23m, stop: -3m)\n  |> filter(fn: (r) => r.run == \"4\" and r.process == \"lagrande\" and (r._field == \"value\"))\n  |> map(fn: (r) => ({\n      _time: r._time,\n      fqn: r.process + \".\" +  r.node + \".\" + r._measurement + \".\" + r.worker\n    }))\n  |> keep(columns: [\"_time\", \"fqn\"])\n  |> window(every: 1m)\n  |> unique(column: \"fqn\")\n  |> aggregateWindow(every: 1m, fn: count, columns: [\"fqn\"])","dialect":{"annotations":["group","datatype","default"]}}
