@@ -19,14 +19,14 @@ var (
 									|> window(every: 1m)
 									|> unique(column: "fqn")
 									|> aggregateWindow(every: 1m, fn: count, columns: ["fqn"])`
-	influxdbQuery1Timeserie    = `SELECT "value" FROM "randomint-1" WHERE ("worker" = '1' AND "node" = 'lg1') AND time >= now() - %s`
-	influxdbQuery100Timeseries = `SELECT "value" FROM "randomint-1" WHERE ("worker" =~ /1[0-9]{2}/ AND "node" = 'lg1') AND time >= now() - %s`
-	influxdbQuery400Timeseries = `SELECT "value" FROM "randomint-1" WHERE ("worker" =~ /1[0-9]{2}/ AND "node" =~ /lg[0-4]/) AND time >= now() - %s`
+	influxdbQuery1Timeserie    = `SELECT "mean" FROM "1m"."randomint-1" WHERE ("worker" = '1' AND "node" = 'lg1') AND time >= now() - %s`
+	influxdbQuery100Timeseries = `SELECT "mean" FROM "1m"."randomint-1" WHERE ("worker" =~ /1[0-9]{2}/ AND "node" = 'lg1') AND time >= now() - %s`
+	influxdbQuery400Timeseries = `SELECT "mean" FROM "1m"."randomint-1" WHERE ("worker" =~ /1[0-9]{2}/ AND "node" =~ /lg[0-4]/) AND time >= now() - %s`
 	//find("lagrande.latency.lg1.*")|Stats:percentile(99)
-	influxdbQuery100TimeseriesP99  = `SELECT percentile("value", 99) FROM "randomint-1" WHERE ("worker" =~ /1[0-9]{2}/ AND "node" = 'lg1') AND time >= now() - %s GROUP BY time(5s)`
-	influxdbQuery400TimeseriesP99  = `SELECT percentile("value", 99) FROM "randomint-1" WHERE ("worker" =~ /1[0-9]{2}/ AND "node" =~ /lg[0-4]/) AND time >= now() - %s GROUP BY time(5s)`
-	influxdbQuery100TimeseriesMean = `SELECT mean("value") FROM "randomint-1" WHERE ("worker" =~ /1[0-9]{2}/ AND "node" = 'lg1') AND time >= now() - %s GROUP BY time(5s)`
-	influxdbQuery400TimeseriesMean = `SELECT mean("value") FROM "randomint-1" WHERE ("worker" =~ /1[0-9]{2}/ AND "node" =~ /lg[0-4]/) AND time >= now() - %s GROUP BY time(5s)`
+	influxdbQuery100TimeseriesP99  = `SELECT percentile("max", 99) FROM "1m"."randomint-1" WHERE ("worker" =~ /1[0-9]{2}/ AND "node" = 'lg1') AND time >= now() - %s GROUP BY time(5s)`
+	influxdbQuery400TimeseriesP99  = `SELECT percentile("max", 99) FROM "1m"."randomint-1" WHERE ("worker" =~ /1[0-9]{2}/ AND "node" =~ /lg[0-4]/) AND time >= now() - %s GROUP BY time(5s)`
+	influxdbQuery100TimeseriesMean = `SELECT mean("mean") FROM "1m"."randomint-1" WHERE ("worker" =~ /1[0-9]{2}/ AND "node" = 'lg1') AND time >= now() - %s GROUP BY time(5s)`
+	influxdbQuery400TimeseriesMean = `SELECT mean("mean") FROM "1m"."randomint-1" WHERE ("worker" =~ /1[0-9]{2}/ AND "node" =~ /lg[0-4]/) AND time >= now() - %s GROUP BY time(5s)`
 )
 
 // EvaluateInfluxDB will launch the AWS and InfluxDB queries to assess InfluxDB performances
@@ -63,8 +63,8 @@ func EvaluateInfluxDB() {
 		}
 		time.Sleep(2 * time.Second)
 
-		go datasource.GrafanaProxyInstance.FluxDBQuery("metrics-count", influxdbQueryMetricCount)
-		time.Sleep(2 * time.Second)
+		//go datasource.GrafanaProxyInstance.FluxDBQuery("metrics-count", influxdbQueryMetricCount)
+		//time.Sleep(2 * time.Second)
 		go datasource.GrafanaProxyInstance.SimpleInfluxDBQuery("1-ts-24-hour-range", influxdbQuery1Timeserie, "24h")
 		time.Sleep(2 * time.Second)
 		go datasource.GrafanaProxyInstance.SimpleInfluxDBQuery("1-ts-1-week-range", influxdbQuery1Timeserie, "7d")

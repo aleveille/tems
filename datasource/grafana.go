@@ -29,8 +29,8 @@ var (
 	// Response body ~= "data":[[6000]],"meta"....
 	// Match everything from the double [[ until a ]
 	caqlResultRegex       = regexp.MustCompile("data\":\\[\\[([^\\]]*)")
-	influxLastResultRegex = regexp.MustCompile(".*,([0-9]*)]]")
-	fluxLastResultRegex   = regexp.MustCompile("(?s).*,([0-9]*)")
+	influxLastResultRegex = regexp.MustCompile(".*,\\[[0-9]*,([0-9\\.]*)\\]")
+	fluxLastResultRegex   = regexp.MustCompile("(?s).*,([0-9\\.]*)")
 
 	// InfluxDB specific variables:
 	influxdbQueryURL = "%s/api/datasources/proxy/1/query?db=%s&q=%s%%20&epoch=%s" // Source 1 = InfluxDB current plugin (InfluxQL)
@@ -266,6 +266,10 @@ func (g *GrafanaProxy) doProxiedInfluxDBHTTPQuery(db string, queryString string,
 	match := influxLastResultRegex.FindStringSubmatch(stringBody)
 
 	if len(match) < 2 {
+		fmt.Println("No match error:")
+		fmt.Println(rangeQuery)
+		fmt.Println(stringBody)
+
 		return "nan", nil
 	}
 
@@ -342,6 +346,7 @@ func (g *GrafanaProxy) doProxiedFluxDBHTTPQuery(db string, queryString string) (
 	}
 
 	return match[1], nil
+
 }
 
 // {"query":"\ndashboardTime = -5m\nupperDashboardTime = 2019-07-24T20:32:04.653Z\n\nfrom(bucket: \"mydb/autogen\")\n  |> range(start: -23m, stop: -3m)\n  |> filter(fn: (r) => r.run == \"4\" and r.process == \"lagrande\" and (r._field == \"value\"))\n  |> map(fn: (r) => ({\n      _time: r._time,\n      fqn: r.process + \".\" +  r.node + \".\" + r._measurement + \".\" + r.worker\n    }))\n  |> keep(columns: [\"_time\", \"fqn\"])\n  |> window(every: 1m)\n  |> unique(column: \"fqn\")\n  |> aggregateWindow(every: 1m, fn: count, columns: [\"fqn\"])","dialect":{"annotations":["group","datatype","default"]}}
