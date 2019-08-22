@@ -28,13 +28,30 @@ var (
 	caqlQueryURL = "%s/api/datasources/proxy/1/extension/lua/caql_v1?format=DF4&start=%d&end=%d&period=60&q=%s"
 	// Response body ~= "data":[[6000]],"meta"....
 	// Match everything from the double [[ until a ]
-	caqlResultRegex       = regexp.MustCompile("data\":\\[\\[([^\\]]*)")
-	influxLastResultRegex = regexp.MustCompile(".*,\\[[0-9]*,([0-9\\.]*)\\]")
-	fluxLastResultRegex   = regexp.MustCompile("(?s).*,([0-9\\.]*)")
+	caqlResultRegex          = regexp.MustCompile("data\":\\[\\[([^\\]]*)")
+	influxLastResultRegex    = regexp.MustCompile(".*,\\[[0-9]*,([0-9\\.]*)\\]")
+	fluxLastResultRegex      = regexp.MustCompile("(?s).*,([0-9\\.]*)")
+	timescaleLastResultRegex = regexp.MustCompile("(?s).*,([0-9\\.]+)")
 
 	// InfluxDB specific variables:
 	influxdbQueryURL = "%s/api/datasources/proxy/1/query?db=%s&q=%s%%20&epoch=%s" // Source 1 = InfluxDB current plugin (InfluxQL)
 	fluxdbQueryURL   = "%s/api/datasources/proxy/2/flux/api/v2/query?org=my-org"  // Source 2 = InfluxDB beta Flux plugin
+
+	// Timescale specific variables:
+	timescaleQueryURL  = "%s/api/tsdb/query"
+	timescaleQueryBody = `{
+		"from":"%d",
+		"to":"%d",
+		"queries":[
+			{
+				"refId":"A",
+				"intervalMs":%d,
+				"maxDataPoints":960,
+				"datasourceId":1,
+				"rawSql":"%s",
+				"format":"time_series"
+			}]
+		}`
 )
 
 // GrafanaProxy is our wrapper to provide higher-level functionnality to the Grafana API
@@ -346,7 +363,76 @@ func (g *GrafanaProxy) doProxiedFluxDBHTTPQuery(db string, queryString string) (
 	}
 
 	return match[1], nil
-
 }
 
-// {"query":"\ndashboardTime = -5m\nupperDashboardTime = 2019-07-24T20:32:04.653Z\n\nfrom(bucket: \"mydb/autogen\")\n  |> range(start: -23m, stop: -3m)\n  |> filter(fn: (r) => r.run == \"4\" and r.process == \"lagrande\" and (r._field == \"value\"))\n  |> map(fn: (r) => ({\n      _time: r._time,\n      fqn: r.process + \".\" +  r.node + \".\" + r._measurement + \".\" + r.worker\n    }))\n  |> keep(columns: [\"_time\", \"fqn\"])\n  |> window(every: 1m)\n  |> unique(column: \"fqn\")\n  |> aggregateWindow(every: 1m, fn: count, columns: [\"fqn\"])","dialect":{"annotations":["group","datatype","default"]}}
+func (g *GrafanaProxy) TimescaleDBQuery(queryMetricName string, queryString string, queryRange int64) {
+	queryStartTime := time.Now()
+
+	queryDuration := "nan"
+
+	queryTimestamp := queryStartTime.Unix()
+
+	result, err := g.doProxiedTimescaleDBHTTPQuery(queryString, (queryTimestamp-queryRange)*1000, queryTimestamp*1000)
+
+	if err != nil {
+		result = "nan"
+		log.Errorf("Error while querying Grafana:\n%v\n", err)
+	} else {
+		queryDurationFloat := float64(time.Now().UnixNano()-queryStartTime.UnixNano()) / 1000 / 1000
+		queryDuration = fmt.Sprintf("%.2f", queryDurationFloat)
+	}
+
+	select {
+	case dataout.ResultChan <- dataout.Result{Timestamp: queryTimestamp, Name: fmt.Sprintf("%s.query.%s.duration", config.SandboxID, queryMetricName), Value: queryDuration}:
+	default:
+		log.Error("Channel full, discarding result")
+	}
+	select {
+	case dataout.ResultChan <- dataout.Result{Timestamp: queryTimestamp, Name: fmt.Sprintf("%s.query.%s.value", config.SandboxID, queryMetricName), Value: result}:
+	default:
+		log.Error("Channel full, discarding result")
+	}
+}
+
+func (g *GrafanaProxy) doProxiedTimescaleDBHTTPQuery(queryString string, startTimestamp int64, endTimestamp int64) (string, error) {
+	var netClient = &http.Client{
+		Timeout: time.Second * 25,
+	}
+
+	formattedQueryURL := fmt.Sprintf(timescaleQueryURL, config.GrafanaURL)
+	formattedQueryBody := fmt.Sprintf(timescaleQueryBody, startTimestamp, endTimestamp, 60000, queryString)
+
+	req, _ := http.NewRequest("POST", formattedQueryURL, bytes.NewBuffer([]byte(formattedQueryBody)))
+	req.Header.Add("cookie", grafanaCookie)
+	req.Header.Set("Content-Type", "application/json;charset=utf-8")
+	req.Header.Set("X-Grafana-Org-Id", "1")
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+
+	log.Tracef("POST request sent to Grafana: URL=%v, Cookies=%v, Body=%v", req.URL, req.Cookies(), req.Body)
+
+	response, err := netClient.Do(req)
+	if response != nil {
+		defer response.Body.Close()
+	}
+
+	if err != nil {
+		return "nan", fmt.Errorf("net/client request error while querying the Grafana Timescale proxy:\n\t%s", err)
+	}
+	if response.StatusCode >= 400 {
+		return "nan", fmt.Errorf("unexpected HTTP status code error while querying the Grafana Timescale proxy. HTTP status: %d", response.StatusCode)
+	}
+
+	body, ioErr := ioutil.ReadAll(response.Body)
+	if ioErr != nil {
+		return "nan", fmt.Errorf("io error while reading HTTP response body:\n%s", ioErr)
+	}
+
+	stringBody := string(body)
+	match := timescaleLastResultRegex.FindStringSubmatch(stringBody)
+
+	if len(match) < 2 {
+		return "nan", nil
+	}
+
+	return match[1], nil
+}

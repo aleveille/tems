@@ -66,6 +66,8 @@ func main() {
 		check.EvaluateIRONdb()
 	case "influxdb":
 		check.EvaluateInfluxDB()
+	case "timescale":
+		check.EvaluateTimescaleDB()
 	default:
 		log.Fatal("Config validation should have caught that the TSDB type is invalid")
 	}
@@ -86,7 +88,7 @@ func parseCLIFlag() error {
 	var logLevel string
 
 	flag.StringVar(&sandboxID, "sandboxID", "", "Something like irondb-sandbox")
-	flag.StringVar(&tsdbSystem, "tsdbSystem", "", "Lowercase TSDB system type (irondb, influxdb, etc)")
+	flag.StringVar(&tsdbSystem, "tsdbSystem", "", "Lowercase TSDB system type (irondb, influxdb, timescale, etc)")
 	flag.StringVar(&circonusAPIToken, "circonusAPIToken", "", "A Circonus API token (normal privileges are enough)")
 	flag.StringVar(&grafanaURL, "grafanaURL", "", "Something like https://grafana.<sandbox-id>.adgear-dev.com")
 	flag.StringVar(&grafanaUser, "grafanaUser", "", "The user used to login to Grafana")

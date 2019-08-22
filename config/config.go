@@ -155,7 +155,7 @@ func ValidateConfig() error {
 		return appError.NewInitializationError("The variable circonusAPIToken must be provided through the CLI arguments or environment variable", nil)
 	}
 
-	if TSDBSystem != "irondb" && TSDBSystem != "influxdb" {
+	if TSDBSystem != "irondb" && TSDBSystem != "influxdb" && TSDBSystem != "timescale" {
 		return appError.NewInitializationError("The value of tsdbSystem is invalid", nil)
 	}
 
