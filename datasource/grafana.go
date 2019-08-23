@@ -31,7 +31,7 @@ var (
 	caqlResultRegex          = regexp.MustCompile("data\":\\[\\[([^\\]]*)")
 	influxLastResultRegex    = regexp.MustCompile(".*,\\[[0-9]*,([0-9\\.]*)\\]")
 	fluxLastResultRegex      = regexp.MustCompile("(?s).*,([0-9\\.]*)")
-	timescaleLastResultRegex = regexp.MustCompile("(?s).*,([0-9\\.]+)")
+	timescaleLastResultRegex = regexp.MustCompile("(?s).*\\[([0-9\\.]+),[0-9\\.]+")
 
 	// InfluxDB specific variables:
 	influxdbQueryURL = "%s/api/datasources/proxy/1/query?db=%s&q=%s%%20&epoch=%s" // Source 1 = InfluxDB current plugin (InfluxQL)
