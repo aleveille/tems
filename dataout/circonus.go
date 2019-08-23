@@ -260,7 +260,7 @@ func (c *CirconusProxy) createMetric(name string, tags []string) *circonusApi.Ch
 // PushDatapoint will push a datapoint (a value) to the Circonus SaaS platform
 func (c *CirconusProxy) PushDatapoint(timestamp int64, name string, value string, datatype string) {
 	var sb strings.Builder
-	payload := fmt.Sprintf("{\"_ts\": %d, \"%s\": \"%s\", \"_type\": \"%s\"}", timestamp, name, value, datatype)
+	payload := fmt.Sprintf("{\"_ts\": %d, \"%s\": \"%s\", \"_type\": \"%s\"}", timestamp*1000, name, value, datatype)
 	sb.WriteString(payload)
 
 	req, _ := http.NewRequest("POST", c.httpAPIURL, strings.NewReader(sb.String()))
