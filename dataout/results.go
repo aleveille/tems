@@ -54,7 +54,7 @@ func handleResult() {
 				log.Warnf("Skipping result %s for %s\n", val, result.Name)
 				break
 			} else {
-				log.Tracef("Got result: %s", result.ToString())
+				log.Debugf("Got result: %s", result.ToString())
 			}
 			CirconusProxyInstance.PushDatapoint(result.Timestamp, result.Name, val, dt)
 		}
